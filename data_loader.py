@@ -3,6 +3,7 @@ import re
 import pandas as pd
 from docx import Document
 
+
 class DataLoader:
     def __init__(self, data_dir):
         self.data_dir = data_dir
@@ -104,19 +105,21 @@ class DataLoader:
         control_folder = os.path.join(self.data_dir, 'control')
         patients_folder = os.path.join(self.data_dir, 'patients')
 
-        self._load_files_from_folder(control_folder, label=0)
-        self._load_files_from_folder(patients_folder, label=1)
+        self._load_files_from_folder(control_folder, label = 0)
+        self._load_files_from_folder(patients_folder, label = 1)
 
     def get_dataframe(self):
         """Return the data as a pandas DataFrame."""
-        df = pd.DataFrame(self.data, columns=self.questions + ['label', 'file_name'])
+        df = pd.DataFrame(self.data, columns = self.questions + ['label', 'file_name'])
         return df
-    
+
+
 if __name__ == '__main__':
     # Usage example
-    data_loader = DataLoader('Data')  # Update with your data directory
+    data_loader = DataLoader('data')  # Update with your data directory
     data_loader.load_data()
     df = data_loader.get_dataframe()
+    df.to_csv("data.csv", index = False)
 
     # Display the DataFrame
     print(df.head())
