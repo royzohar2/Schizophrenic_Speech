@@ -120,9 +120,10 @@ class YapFeatureExtractor:
 
 
 if __name__ == '__main__':
-    a = YapFeatureExtractor()
-    data = 'אישה שלומדת שיש לה רצון ללמוד איזשהם מקצועות לעומת כשהיא בפרונט ומאחוריה יש גבר ואישה וסוס שעדיין ממשיכים לטפל בחזה לא בחזה בחווה. לטפל בחווה ולהיכנס לבנייה והיא כאילו רוצה לצאת מהמעגל הזה ולהסתדר בכוחות עצמה, כי יש לה פה ספרים וכזה שלומדים וזה.'
-    text_embeddings = a.extract_embeddings(text = data)
-    text_embeddings.to_csv("example_embedd.csv")
+    pass
+    # a = YapFeatureExtractor()
+    # data = 'אישה שלומדת שיש לה רצון ללמוד איזשהם מקצועות לעומת כשהיא בפרונט ומאחוריה יש גבר ואישה וסוס שעדיין ממשיכים לטפל בחזה לא בחזה בחווה. לטפל בחווה ולהיכנס לבנייה והיא כאילו רוצה לצאת מהמעגל הזה ולהסתדר בכוחות עצמה, כי יש לה פה ספרים וכזה שלומדים וזה.'
+    # text_embeddings = a.extract_embeddings(text = data)
+    # text_embeddings.to_csv("example_embedd.csv")
     # df = pd.read_csv("../data.csv", index_col = False)
     # for _, row in df.iterrows():
