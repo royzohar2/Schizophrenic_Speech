@@ -29,7 +29,9 @@ class TextFeatureExtractor:
 
     @staticmethod
     def clean_text(text: str):
-        pass
+        cleaned_text = re.sub(r'\[.*?\]', '', text)
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+        return cleaned_text
 
     @classmethod
     def get_sentence_embedding(cls, sentence):
@@ -99,15 +101,14 @@ class TextFeatureExtractor:
         df["sentence_id"] = sentence_ids
         return df
 
-    @staticmethod
-    def transform_data_to_train_schema(df: pd.DataFrame):
+    def transform_data_to_train_schema(self, df: pd.DataFrame):
         all_data = []
         for _, row in df.iterrows():
             row_dict = row.to_dict()
             for column, value in row_dict.items():
                 if column not in {"label", "file_name"}:
                     record = {
-                        "answer": value,
+                        "answer": self.clean_text(value),
                         "question": column,
                         "label": row["label"],
                         "person": row["file_name"]
