@@ -1,0 +1,8 @@
+hebpipe
+transformers
+pandas
+numpy
+scikit-learn
+nltk
+hebrew-tokenizer==2.3.0
+python-docx
