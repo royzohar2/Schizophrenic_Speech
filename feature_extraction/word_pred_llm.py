@@ -16,7 +16,7 @@ class WordPredictLLM:
     def __init__(self):
         # Load your data
         self.df = pd.read_csv("Data/clean_data.csv")
-        self.df = self.df.loc[0:2]
+        # self.df = self.df.loc[32:33]
         
     def get_token_scores(self, text):
         """Get token-wise scores from the model for the given text."""
@@ -62,8 +62,14 @@ class WordPredictLLM:
             
             # Use tqdm to create a progress bar for columns
             for column in tqdm(self.df.columns[:-2], desc=f"Processing questions for {row['file_name']}", leave=False):
-                scores = self.get_token_scores(row[column])  # Get the vector of scores for the question
-                result_entry['questions'][column] = scores  # Add the scores to the 'questions' dictionary
+                try:
+                    scores = self.get_token_scores(row[column])  # Get the vector of scores for the question
+                except Exception as e:
+                    print(f"Error: {e}")
+                    print(f"File: {row['file_name']} | Column: {column}")
+                    scores = []  # Assign an empty list to scores in case of error
+
+                result_entry['questions'][column] = scores
             
             # Append the result entry to the results list
             results.append(result_entry)
