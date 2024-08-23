@@ -74,6 +74,12 @@ class DataLoader:
         """Map question to the predefined list using the mapping dictionary."""
         return self.question_mapping.get(question, question)
 
+    def _clean_text(self, text):
+        """Clean text by removing all occurrences of single and double square brackets and text inside them."""
+        # Remove text within single or double square brackets
+        return re.sub(r'\[\[.*?\]\]|\[.*?\]', '', text).strip()
+
+    
     def _extract_data(self, content):
         """Extract question names and corresponding text from the content."""
         pattern = re.compile(r'\+\+(.*?)\+\+')
@@ -85,7 +91,8 @@ class DataLoader:
             clean_name = name.strip()
             normalized_name = self._map_question(clean_name)
             if normalized_name in self.questions:
-                data[normalized_name] = text.strip()
+                cleaned_text = self._clean_text(text.strip())
+                data[normalized_name] = cleaned_text
 
         return data
 
@@ -119,7 +126,7 @@ if __name__ == '__main__':
     data_loader = DataLoader('data')  # Update with your data directory
     data_loader.load_data()
     df = data_loader.get_dataframe()
-    df.to_csv("data.csv", index = False)
+    # df.to_csv("Data/clean_data.csv", index = False)
 
     # Display the DataFrame
     print(df.head())
