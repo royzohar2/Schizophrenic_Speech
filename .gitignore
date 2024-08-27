@@ -1,2 +1,4 @@
-Data/
+Data/control/
+Data/patients/
 __pycache__/
+.DS_Store
