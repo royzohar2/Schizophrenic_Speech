@@ -3,6 +3,8 @@ import re
 import pandas as pd
 from docx import Document
 
+from utils import clean_text
+
 
 class DataLoader:
     def __init__(self, data_dir):
@@ -74,12 +76,6 @@ class DataLoader:
         """Map question to the predefined list using the mapping dictionary."""
         return self.question_mapping.get(question, question)
 
-    def _clean_text(self, text):
-        """Clean text by removing all occurrences of single and double square brackets and text inside them."""
-        # Remove text within single or double square brackets
-        return re.sub(r'\[\[.*?\]\]|\[.*?\]', '', text).strip()
-
-    
     def _extract_data(self, content):
         """Extract question names and corresponding text from the content."""
         pattern = re.compile(r'\+\+(.*?)\+\+')
@@ -91,7 +87,7 @@ class DataLoader:
             clean_name = name.strip()
             normalized_name = self._map_question(clean_name)
             if normalized_name in self.questions:
-                cleaned_text = self._clean_text(text.strip())
+                cleaned_text = clean_text(text.strip())
                 data[normalized_name] = cleaned_text
 
         return data

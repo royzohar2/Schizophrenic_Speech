@@ -1,15 +1,14 @@
-from collections import defaultdict
-
 import pandas as pd
 import torch
 from torch import nn
 from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
-from test_study.yap_analysis.features import YapFeatureExtractor
 from transformers import AutoTokenizer, AutoModel
 import numpy as np
-import re
+
+from feature_extraction.yap import YapFeatureExtractor
+from utils import explode_df_to_single_record
 
 MODEL_NAME = "onlplab/alephbert-base"  # Use the AlephBERT base model
 CATEGORIES = ["pos", "dependency_part", "gen", "tense", "per", "num_s_p"]
@@ -30,7 +29,7 @@ def convert_ndarray_to_list(obj):
         return obj
 
 
-class TextFeatureExtractor:
+class MorphologicalFeatureExtractor:
     def __init__(self, model_name: str = MODEL_NAME):
         self.yap_feature = YapFeatureExtractor()
         self.count_vec = CountVectorizer()
@@ -39,13 +38,6 @@ class TextFeatureExtractor:
         self.lda = LatentDirichletAllocation(random_state = 42)
         self.model_name = model_name
         self.cosine_similarity = nn.CosineSimilarity(dim = 0, eps = 1e-6)
-
-    @staticmethod
-    def clean_text(text: str):
-        if isinstance(text, str):
-            cleaned_text = re.sub(r'\[.*?\]', '', text)
-            cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
-            return cleaned_text
 
     @classmethod
     def mean_pooling(cls, model_output, attention_mask):
@@ -118,22 +110,6 @@ class TextFeatureExtractor:
         df["sentence_id"] = sentence_ids
         return df
 
-    def transform_data_to_train_schema(self, df: pd.DataFrame):
-        all_data = []
-        for _, row in df.iterrows():
-            row_dict = row.to_dict()
-            for column, value in row_dict.items():
-                if column not in {"label", "file_name"} and value:
-                    record = {
-                        "answer": self.clean_text(value),
-                        "question": column,
-                        "label": row["label"],
-                        "person": row["file_name"]
-                    }
-                    all_data.append(record)
-        transformed_df = pd.DataFrame(all_data)
-        transformed_df["question"] = self.label_encoder.fit_transform(transformed_df["question"])
-        return transformed_df
 
     def encode_labels(self, df: pd.DataFrame, categories: list[str] = CATEGORIES):
         for category in categories:
@@ -165,22 +141,21 @@ class TextFeatureExtractor:
         all_features.update(yap_analysis_dict)
         return all_features
 
-    def preprocess_data(self, df: pd.DataFrame):
+    def preprocess_data(self, df: pd.DataFrame) -> pd.DataFrame:
         all_data = []
         for _, row in df.iterrows():
-            if row["label"] == 1:
-                all_text_features = self.extract_all_features(row["answer"])
-                row_dict = row.to_dict()
-                row_dict.update(all_text_features)
-                all_data.append(row_dict)
-        return all_data
+            all_text_features = self.extract_all_features(row["answer"])
+            row_dict = row.to_dict()
+            row_dict.update(all_text_features)
+            all_data.append(row_dict)
+        return pd.DataFrame(all_data)
 
 
 if __name__ == '__main__':
     # Apply the function to add coherence scores
-    feat_extractor = TextFeatureExtractor()
+    feat_extractor = MorphologicalFeatureExtractor()
     df = pd.read_csv("../data/clean_data.csv", index_col = False)
-    df = feat_extractor.transform_data_to_train_schema(df)
+    df = explode_df_to_single_record(df)
     df = feat_extractor.preprocess_data(df)
     df.to_csv("data_coherence.csv", index = False)
     pass

@@ -3,12 +3,7 @@ from pydantic import BaseModel, ConfigDict
 from infra.yap_wrapper.yap_api import YapApi
 import pandas as pd
 import torch
-from sklearn.preprocessing import OneHotEncoder
 from transformers import BertModel, BertTokenizerFast
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, accuracy_score
-import numpy as np
 
 # Load BERT model and tokenizer
 tokenizer = BertTokenizerFast.from_pretrained('onlplab/alephbert-base')

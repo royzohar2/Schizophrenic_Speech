@@ -11,7 +11,8 @@ from pytorch_metric_learning.losses import TripletMarginLoss
 from pytorch_metric_learning.miners import TripletMarginMiner
 from transformers import AutoTokenizer, AutoModel
 
-from feature_extraction.text_feature_extractor import TextFeatureExtractor
+from feature_extraction.morphological import MorphologicalFeatureExtractor
+from utils import explode_df_to_single_record
 
 """ 
         Triplet loss is computed on a set of three examples:
@@ -104,13 +105,6 @@ class TripletTextDataset(Dataset):
         return input_ids, attention_mask, label
 
 
-def embed_func(text_batch):
-    # Convert text to embeddings (e.g., using BERT)
-    embeddings = [TextFeatureExtractor.get_sentence_embedding(text) for text in text_batch]
-    # Convert to a tensor of shape (batch_size, embedding_dim)
-    return torch.stack(embeddings)
-
-
 def train_and_evaluate(train_text_data, train_labels, test_text_data, test_labels):
     # Initialize tokenizer and datasets
     train_dataset = TripletTextDataset(train_text_data, train_labels, tokenizer)
@@ -174,9 +168,9 @@ def train_and_evaluate(train_text_data, train_labels, test_text_data, test_label
 
 
 if __name__ == '__main__':
-    feat_extractor = TextFeatureExtractor()
+    feat_extractor = MorphologicalFeatureExtractor()
     data_df = pd.read_csv("../data/clean_data.csv", index_col = False)
-    data_df = feat_extractor.transform_data_to_train_schema(data_df).dropna()
+    data_df = explode_df_to_single_record(data_df).dropna()
     train_df, test_df = train_test_split(data_df, test_size = 0.2, random_state = 42)
 
     # Extract training data
