@@ -123,7 +123,7 @@ class DataLoader:
 
 if __name__ == '__main__':
     # Usage example
-    data_loader = DataLoader('data')  # Update with your data directory
+    data_loader = DataLoader('../data')  # Update with your data directory
     data_loader.load_data()
     df = data_loader.get_dataframe()
     # df.to_csv("Data/clean_data.csv", index = False)

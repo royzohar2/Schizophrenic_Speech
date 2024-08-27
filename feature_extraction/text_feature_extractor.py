@@ -179,7 +179,7 @@ class TextFeatureExtractor:
 if __name__ == '__main__':
     # Apply the function to add coherence scores
     feat_extractor = TextFeatureExtractor()
-    df = pd.read_csv("/Users/seanlavi/dev/Schizophrenic_Speech/data.csv", index_col = False)
+    df = pd.read_csv("../data/clean_data.csv", index_col = False)
     df = feat_extractor.transform_data_to_train_schema(df)
     df = feat_extractor.preprocess_data(df)
     df.to_csv("data_coherence.csv", index = False)
