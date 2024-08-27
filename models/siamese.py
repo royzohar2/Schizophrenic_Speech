@@ -1,19 +1,35 @@
-import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.model_selection import train_test_split
 from torch import optim
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
+from pytorch_metric_learning.losses import TripletMarginLoss
+from pytorch_metric_learning.miners import TripletMarginMiner
+from transformers import AutoTokenizer, AutoModel
+
 from test_study.coherence.features import TextFeatureExtractor
 
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+    print("MPS device is available. Using MPS for training.")
+else:
+    device = torch.device("cpu")
+    print("MPS device is not available. Using CPU for training.")
 
-# Define the embedding model
-class EmbeddingModel(nn.Module):
-    def __init__(self):
-        super(EmbeddingModel, self).__init__()
+model_name = "onlplab/alephbert-base"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+alephbert_model = AutoModel.from_pretrained(model_name)
+alephbert_model.to(device)
+
+
+class AlephBERTEmbeddingModel(nn.Module):
+    def __init__(self, alephbert_model):
+        super().__init__()
+        self.alephbert_model = alephbert_model
         self.dense1 = nn.Linear(768, 256)
         self.dropout1 = nn.Dropout(0.4)
         self.batch_norm1 = nn.BatchNorm1d(256)
@@ -21,99 +37,40 @@ class EmbeddingModel(nn.Module):
         self.dropout2 = nn.Dropout(0.4)
         self.dense3 = nn.Linear(64, 128)
 
-    def forward(self, x):
-        x = x.squeeze()
+    def forward(self, input_ids, attention_mask):
+        # Get embeddings from AlephBERT
+        outputs = self.alephbert_model(input_ids = input_ids, attention_mask = attention_mask)
+        x = outputs.last_hidden_state[:, 0, :]  # Use the [CLS] token embeddings
+
+        # Apply additional dense layers and normalization
         x = F.relu(self.dense1(x))
         x = self.dropout1(x)
         x = self.batch_norm1(x)
         x = F.relu(self.dense2(x))
         x = self.dropout2(x)
         x = self.dense3(x)
-
-        # Normalize output embeddings
         x = F.normalize(x, p = 2, dim = 1)
         return x
 
-    def predict(self, inputs):
-        self.eval()  # Ensure the model is in evaluation mode
-        with torch.no_grad():
-            return self.forward(inputs)
-
-    @classmethod
-    def save_model(cls, path: str):
-        embedding_model = cls()
-        torch.save(embedding_model.state_dict(), path)
-
-    @classmethod
-    def load_model(cls, path: str):
-        loaded_model = cls()
-        state_dict = torch.load(path)
-        loaded_model.load_state_dict(state_dict)
-        loaded_model.eval()
-        print("Model loaded and ready for inference or further training")
-        return loaded_model
-
-
-# Custom Triplet Loss Layer
-class TripletLossLayer(nn.Module):
-    def __init__(self, alpha):
-        super(TripletLossLayer, self).__init__()
-        self.alpha = alpha
-
-    def forward(self, anchor, positive, negative):
-        p_dist = torch.sum((anchor - positive) ** 2, axis = 1)
-        n_dist = torch.sum((anchor - negative) ** 2, axis = 1)
-        loss = F.relu(p_dist - n_dist + self.alpha)
-        return torch.mean(loss)
-
-
-# Define the complete model that includes embeddings and triplet loss
-class TripletModel(nn.Module):
-    def __init__(self, embedding_model, alpha):
-        super(TripletModel, self).__init__()
-        self.embedding_model = embedding_model
-        self.triplet_loss_layer = TripletLossLayer(alpha)
-
-    def forward(self, anchor_input, positive_input, negative_input):
-        anchor_embedding = self.embedding_model(anchor_input)
-        positive_embedding = self.embedding_model(positive_input)
-        negative_embedding = self.embedding_model(negative_input)
-        loss = self.triplet_loss_layer(anchor_embedding, positive_embedding, negative_embedding)
-        return loss
-
 
 class TripletTextDataset(Dataset):
-    def __init__(self, text_data, labels, embed_func):
+    def __init__(self, text_data, labels, tokenizer):
         self.text_data = text_data
         self.labels = labels
-        self.embed_func = embed_func
-
-        # Creating a map of indices for each label
-        self.label_indices = {label: np.where(np.array(labels) == label)[0] for label in np.unique(labels)}
+        self.tokenizer = tokenizer
 
     def __len__(self):
         return len(self.text_data)
 
     def __getitem__(self, idx):
-        # Anchor text and its label
-        anchor_text = self.text_data[idx]
-        anchor_label = self.labels[idx]
+        # Tokenize the text
+        encoded_input = self.tokenizer(self.text_data[idx], padding = 'max_length', truncation = True,
+                                       return_tensors = 'pt')
+        input_ids = encoded_input['input_ids'].squeeze(0)
+        attention_mask = encoded_input['attention_mask'].squeeze(0)
 
-        # Finding a positive example with the same label as the anchor
-        positive_idx = idx
-        while positive_idx == idx:
-            positive_idx = np.random.choice(self.label_indices[anchor_label])
-
-        # Finding a negative example with a different label
-        negative_label = 1 - anchor_label  # Since it's binary, the other label is simply `1 - anchor_label`
-        negative_idx = np.random.choice(self.label_indices[negative_label])
-
-        # Convert text to embeddings
-        anchor_embedding = self.embed_func([anchor_text]).squeeze(0)
-        positive_embedding = self.embed_func([self.text_data[positive_idx]]).squeeze(0)
-        negative_embedding = self.embed_func([self.text_data[negative_idx]]).squeeze(0)
-
-        return anchor_embedding, positive_embedding, negative_embedding
+        label = torch.tensor(self.labels[idx], dtype = torch.long)
+        return input_ids, attention_mask, label
 
 
 def embed_func(text_batch):
@@ -123,41 +80,79 @@ def embed_func(text_batch):
     return torch.stack(embeddings)
 
 
-def train():
-    # Initialize the embedding and triplet models
-    embedding_model = EmbeddingModel()
-    alpha = 0.4
-    triplet_model = TripletModel(embedding_model, alpha)
+def train_and_evaluate(train_text_data, train_labels, test_text_data, test_labels):
+    # Initialize tokenizer and datasets
+    train_dataset = TripletTextDataset(train_text_data, train_labels, tokenizer)
+    test_dataset = TripletTextDataset(test_text_data, test_labels, tokenizer)
 
-    train_text_data = train['answer'].values.tolist()
-    train_labels = train['label'].values.tolist()
+    train_loader = DataLoader(train_dataset, batch_size = 32, shuffle = True)
+    test_loader = DataLoader(test_dataset, batch_size = 32, shuffle = False)
 
-    # Initialize the dataset and DataLoader
-    train_dataset = TripletTextDataset(train_text_data, train_labels, embed_func)
-    train_loader = DataLoader(train_dataset, batch_size = 128, shuffle = True)
+    # Initialize the AlephBERT-based embedding model
+    embedding_model = AlephBERTEmbeddingModel(alephbert_model)
 
-    # Initialize optimizer
-    optimizer = optim.Adam(triplet_model.parameters(), lr = 0.001)
+    # Initialize triplet margin loss and miner
+    margin = 1.0
+    triplet_loss = TripletMarginLoss(margin = margin)
+    miner = TripletMarginMiner(margin = margin, type_of_triplets = "hard")
+
+    optimizer = optim.Adam(embedding_model.parameters(), lr = 0.01)
 
     # Training Loop
     num_epochs = 100
-
     for epoch in tqdm(range(num_epochs)):
-        triplet_model.train()  # Set model to training mode
-
+        embedding_model.train()
         running_loss = 0.0
-        for i, (anchor, positive, negative) in enumerate(train_loader):
-            optimizer.zero_grad()  # Zero the gradients
 
-            loss = triplet_model(anchor, positive, negative)  # Forward pass to compute loss
-            loss.backward()  # Backward pass
-            optimizer.step()  # Optimization step
+        # Training Phase
+        for input_ids, attention_mask, labels in train_loader:
+            optimizer.zero_grad()
+
+            # Get embeddings
+            embeddings = embedding_model(input_ids = input_ids, attention_mask = attention_mask)
+
+            # Mine hard triplets
+            hard_triplets = miner(embeddings, labels)
+
+            # Compute triplet loss
+            loss = triplet_loss(embeddings, labels, hard_triplets)
+            loss.backward()
+            optimizer.step()
 
             running_loss += loss.item()
 
-            if i % 10 == 9:  # Print every 10 mini-batches
-                print(f"[Epoch {epoch + 1}, Batch {i + 1}] loss: {running_loss / 10:.4f}")
-                running_loss = 0.0
+        print(f"Epoch {epoch + 1}, Training Loss: {running_loss / len(train_loader):.4f}")
 
-    print('Finished Training')
+        # Evaluation Phase
+        embedding_model.eval()
+        test_loss = 0.0
+        with torch.no_grad():
+            for input_ids, attention_mask, labels in test_loader:
+                embeddings = embedding_model(input_ids = input_ids, attention_mask = attention_mask)
+                hard_triplets = miner(embeddings, labels)
+                loss = triplet_loss(embeddings, labels, hard_triplets)
+                test_loss += loss.item()
 
+        print(f"Epoch {epoch + 1}, Test Loss: {test_loss / len(test_loader):.4f}")
+
+    print('Finished Training and Evaluation')
+
+    # Save the models
+    torch.save(embedding_model.state_dict(), "/models/experiments/embedding_model_hard_mining.pth")
+    print("Model saved successfully.")
+
+
+if __name__ == '__main__':
+    feat_extractor = TextFeatureExtractor()
+    data_df = pd.read_csv("../data/clean_data.csv", index_col = False)
+    data_df = feat_extractor.transform_data_to_train_schema(data_df).dropna()
+    train_df, test_df = train_test_split(data_df, test_size = 0.2, random_state = 42)
+
+    # Extract training data
+    train_text_data = train_df['answer'].values.tolist()
+    train_labels = train_df['label'].values.tolist()
+
+    # Extract test data
+    test_text_data = test_df['answer'].values.tolist()
+    test_labels = test_df['label'].values.tolist()
+    train_and_evaluate(train_text_data, train_labels, test_text_data, test_labels)

@@ -4,6 +4,37 @@ import torch.nn.functional as F
 
 eps = 1e-8  # an arbitrary small value to be used for numerical stability tricks
 
+""" 
+        Triplet loss is computed on a set of three examples:
+
+        Anchor (A): The base example.
+        Positive (P): An example that is similar to the anchor.
+        Negative (N): An example that is dissimilar to the anchor. 
+        
+        The goal is to make the distance between A and P smaller than 
+        the distance between A and N by a margin α.
+        
+                L(A, P, N) = max(d(A,P) − d(A,N) + α, 0)
+                
+        To make training more efficient and effective, "hard triplet mining" is often used, 
+        which selects the most difficult triplets (where the negative is close to the anchor 
+        or the positive is far from the anchor) for training. 
+        This ensures that the model is always learning from the most challenging examples, 
+        improving its robustness.
+
+        Reference: https://omoindrot.github.io/triplet-loss#offline-and-online-triplet-mining
+        
+        1. batch all: select all the valid triplets, and average the loss on the hard and semi-hard triplets.
+            a crucial point here is to not take into account the easy triplets (those with loss 0), 
+            as averaging on them would make the overall loss very small this produces a total of PK (K−1) (PK−K)
+            triplets (PK anchors, K − 1 possible positives per anchor, PK − K possible negatives)
+            
+        2. batch hard: for each anchor, select the hardest positive (biggest distance d(a,p)) 
+            and the hardest negative among the batch this produces PK triplets
+            the selected triplets are the hardest among the batch
+
+"""
+
 
 def euclidean_distance_matrix(x):
     """Efficient computation of Euclidean distance matrix
