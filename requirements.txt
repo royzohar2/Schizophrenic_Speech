@@ -5,4 +5,5 @@ numpy
 scikit-learn
 nltk
 hebrew-tokenizer==2.3.0
+pytorch-metric-learning
 python-docx
