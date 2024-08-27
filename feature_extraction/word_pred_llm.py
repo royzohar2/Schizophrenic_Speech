@@ -15,7 +15,7 @@ model.to(device)
 class WordPredictLLM:
     def __init__(self):
         # Load your data
-        self.df = pd.read_csv("Data/clean_data.csv")
+        self.df = pd.read_csv("data/clean_data.csv")
         # self.df = self.df.loc[32:33]
 
     def get_token_scores(self, text):
@@ -76,10 +76,10 @@ class WordPredictLLM:
             results.append(result_entry)
 
         # Save results as a JSON file
-        with open("Data/word_pred_llm.json", 'w', encoding = 'utf-8') as f:
+        with open("data/word_pred_llm.json", 'w', encoding = 'utf-8') as f:
             json.dump(results, f, ensure_ascii = False, indent = 4)
 
-        print("Data saved to Data/word_pred_llm.json")
+        print("Data saved to data/word_pred_llm.json")
 
 
 if __name__ == '__main__':

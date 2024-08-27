@@ -52,4 +52,4 @@ class GroundTruthDistance:
 if __name__ == '__main__':
     distance_calculator = GroundTruthDistance()
     distances = distance_calculator.calculate_ground_truth_distances()
-    distances.to_csv('Data/ground_truth_distances.csv', index = False)
+    distances.to_csv('data/ground_truth_distances.csv', index = False)

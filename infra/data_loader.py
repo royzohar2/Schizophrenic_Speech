@@ -122,7 +122,7 @@ if __name__ == '__main__':
     data_loader = DataLoader('../data')  # Update with your data directory
     data_loader.load_data()
     df = data_loader.get_dataframe()
-    # df.to_csv("Data/clean_data.csv", index = False)
+    # df.to_csv("data/clean_data.csv", index = False)
 
     # Display the DataFrame
     print(df.head())
