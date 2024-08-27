@@ -2,7 +2,7 @@ from collections import defaultdict
 
 import pandas as pd
 import torch
-from sklearn.metrics.pairwise import cosine_similarity
+from torch import nn
 from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
@@ -11,11 +11,23 @@ from transformers import AutoTokenizer, AutoModel
 import numpy as np
 import re
 
-
 MODEL_NAME = "onlplab/alephbert-base"  # Use the AlephBERT base model
 CATEGORIES = ["pos", "dependency_part", "gen", "tense", "per", "num_s_p"]
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModel.from_pretrained(MODEL_NAME)
+
+
+def convert_ndarray_to_list(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.generic):  # Handles numpy scalar types like int64, float32, etc.
+        return obj.item()
+    elif isinstance(obj, dict):
+        return {key: convert_ndarray_to_list(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_ndarray_to_list(element) for element in obj]
+    else:
+        return obj
 
 
 class TextFeatureExtractor:
@@ -26,29 +38,36 @@ class TextFeatureExtractor:
         self.label_encoder = LabelEncoder()
         self.lda = LatentDirichletAllocation(random_state = 42)
         self.model_name = model_name
+        self.cosine_similarity = nn.CosineSimilarity(dim = 0, eps = 1e-6)
 
     @staticmethod
     def clean_text(text: str):
-        pass
+        if isinstance(text, str):
+            cleaned_text = re.sub(r'\[.*?\]', '', text)
+            cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+            return cleaned_text
+
+    @classmethod
+    def mean_pooling(cls, model_output, attention_mask):
+        # Mean Pooling - Take attention mask into account for correct averaging
+        token_embeddings = model_output[0]  # First element of model_output contains all token embeddings
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1),
+                                                                                  min = 1e-9)
 
     @classmethod
     def get_sentence_embedding(cls, sentence):
-        inputs = tokenizer(sentence, return_tensors = "pt", padding = True, truncation = True)
+        encoded_input = tokenizer(sentence, padding = True, truncation = True, return_tensors = 'pt')
+        # Compute token embeddings
         with torch.no_grad():
-            outputs = model(**inputs)
-        cls_embedding = outputs.last_hidden_state[:, 0, :]  # [CLS] token embedding
-        return cls_embedding.squeeze().numpy()
+            model_output = model(**encoded_input)
 
-    def calculate_coherence_score(self, sentences):
-        embeddings = [self.get_sentence_embedding(sentence) for sentence in sentences]
-        similarities = [
-            cosine_similarity([embeddings[i]], [embeddings[i + 1]])[0][0]
-            for i in range(len(embeddings) - 1)
-        ]
-        return np.mean(similarities) if similarities else 1.0
+        # Perform pooling. In this case, mean pooling.
+        sentence_embeddings = cls.mean_pooling(model_output, encoded_input['attention_mask'])
+        return sentence_embeddings
 
     def calculate_attention_scores(self, sentences):
-        embeddings = [self.get_sentence_embedding(sentence.strip()) for sentence in sentences]
+        embeddings = [np.reshape(self.get_sentence_embedding(sentence.strip()), [-1, 1]) for sentence in sentences]
         num_sentences = len(embeddings)
 
         logic_scores = []
@@ -56,7 +75,7 @@ class TextFeatureExtractor:
         for i in range(1, num_sentences):
             attention_weights = []
             for j in range(i):
-                attention_weight = cosine_similarity(embeddings[i], embeddings[j])[0][0]
+                attention_weight = self.cosine_similarity(embeddings[i], embeddings[j]).item()
                 attention_weights.append(attention_weight)
 
             logic_score = np.mean(attention_weights)
@@ -99,51 +118,62 @@ class TextFeatureExtractor:
         df["sentence_id"] = sentence_ids
         return df
 
-    @staticmethod
-    def transform_data_to_train_schema(df: pd.DataFrame):
+    def transform_data_to_train_schema(self, df: pd.DataFrame):
         all_data = []
         for _, row in df.iterrows():
             row_dict = row.to_dict()
             for column, value in row_dict.items():
-                if column not in {"label", "file_name"}:
+                if column not in {"label", "file_name"} and value:
                     record = {
-                        "answer": value,
+                        "answer": self.clean_text(value),
                         "question": column,
                         "label": row["label"],
                         "person": row["file_name"]
                     }
                     all_data.append(record)
-        return pd.DataFrame(all_data)
+        transformed_df = pd.DataFrame(all_data)
+        transformed_df["question"] = self.label_encoder.fit_transform(transformed_df["question"])
+        return transformed_df
 
     def encode_labels(self, df: pd.DataFrame, categories: list[str] = CATEGORIES):
         for category in categories:
-            df[category] = self.label_encoder.fit_transform(df[category])
+            df[category] = self.label_encoder.fit_transform(df[category].astype(str))
         return df
+
+    @staticmethod
+    def aggregate_features(group):
+        # Aggregate each feature using mean
+        return group[CATEGORIES + ["dependency_arc"]].values
 
     def extract_all_features(self, text: str):
         yap_analysis = self.yap_feature.get_text_mrl_analysis(text)
         md_dep_tree_df = yap_analysis.parse_to_df()
-        md_dep_tree_df = self.agg_sentence_id(md_dep_tree_df)
-        grouped_sentences = md_dep_tree_df.groupby('sentence_id').apply(lambda x: x)
-        sentences_id_map = defaultdict(list)
-        for _, row in grouped_sentences.iterrows():
-            sentences_id_map[row["sentence_id"]].append(row["lemma"])
-        sentences = [' '.join(words) for id, words in sentences_id_map.items()]
-        yap_analysis.attention_scores_per_sentence = self.calculate_attention_scores(sentences)
+        md_dep_tree_df = self.encode_labels(md_dep_tree_df)
+
+        aggregated_word_feat_df = md_dep_tree_df.apply(self.aggregate_features, axis = 1).reset_index()
+        sentences = self.yap_feature.yap_api_provider.split_text_to_sentences(yap_analysis.tokenized_text)
         # combin each word with its pos
-        md_dep_tree_df["combined_word_pos"] = md_dep_tree_df.apply(lambda x: (x["lemma"], x["pos"]), axis = 1)
-        yap_analysis.tf_idf_seg_txt = self.extract_tf_idf(yap_analysis.segmented_text)
-        yap_analysis.tf_idf_tok_txt = self.extract_tf_idf(yap_analysis.tokenized_text)
-        yap_analysis.lda_seg_txt = self.extract_lda(yap_analysis.tf_idf_seg_txt)
-        yap_analysis.lda_tok_txt = self.extract_lda(yap_analysis.tf_idf_tok_txt)
-        yap_analysis.count_vec = self.extract_count_vectorizer(yap_analysis.tokenized_text)
-        return yap_analysis
+        all_features = {}
+        all_features["attention_scores_per_sentence"] = self.calculate_attention_scores(sentences)
+        all_features["tf_idf_seg_txt"] = self.extract_tf_idf(yap_analysis.segmented_text)
+        all_features["tf_idf_tok_txt"] = self.extract_tf_idf(yap_analysis.tokenized_text)
+        all_features["lda_seg_txt"] = self.extract_lda(all_features["tf_idf_seg_txt"]).tolist()
+        all_features["lda_tok_txt"] = self.extract_lda(all_features["tf_idf_tok_txt"]).tolist()
+        all_features["agg_yap_features_vec"] = np.concatenate(aggregated_word_feat_df[0]).tolist()
+        all_features["count_vec"] = self.extract_count_vectorizer(yap_analysis.tokenized_text)
+        yap_analysis_dict = yap_analysis.model_dump(mode = "json", exclude = ["dep_tree", "md_lattice", "ma_lattice"])
+        all_features.update(yap_analysis_dict)
+        return all_features
 
     def preprocess_data(self, df: pd.DataFrame):
+        all_data = []
         for _, row in df.iterrows():
             if row["label"] == 1:
                 all_text_features = self.extract_all_features(row["answer"])
-        return df
+                row_dict = row.to_dict()
+                row_dict.update(all_text_features)
+                all_data.append(row_dict)
+        return all_data
 
 
 if __name__ == '__main__':

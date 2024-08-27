@@ -1,7 +1,6 @@
-from functools import lru_cache
 
 from pydantic import BaseModel, ConfigDict
-from infra.yap_wrapper.yap_api import extract_yap_analysis
+from infra.yap_wrapper.yap_api import YapApi
 import pandas as pd
 import torch
 from sklearn.preprocessing import OneHotEncoder
@@ -10,7 +9,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, accuracy_score
 import numpy as np
-from hebrew_tokenizer import tokenize
 
 # Load BERT model and tokenizer
 tokenizer = BertTokenizerFast.from_pretrained('onlplab/alephbert-base')
@@ -32,17 +30,16 @@ class YapFeaturesMetadata(BaseModel):
         data_combined = pd.concat([self.dep_tree, self.md_lattice], axis = 1)
         data_combined = data_combined.loc[:, ~data_combined.columns.duplicated()]
         data_combined["num"] = data_combined["num"].astype(int)
+        data_combined["dependency_arc"] = data_combined["dependency_arc"].astype(int)
         return data_combined
 
 
 class YapFeatureExtractor:
     def __init__(self):
-        pass
+        self.yap_api_provider = YapApi()
 
-    @classmethod
-    @lru_cache
-    def get_text_mrl_analysis(cls, text: str, **kwargs) -> YapFeaturesMetadata:
-        extracted_data = extract_yap_analysis(text, **kwargs)
+    def get_text_mrl_analysis(self, text: str, **kwargs) -> YapFeaturesMetadata:
+        extracted_data = self.yap_api_provider.run(text)
         return YapFeaturesMetadata.model_validate({
             "tokenized_text": extracted_data[0],
             "segmented_text": extracted_data[1],
