@@ -1,3 +1,5 @@
+import sys
+sys.path.append('/Users/yarinr25/Documents/Data Science Bsc/final project/Schizophrenic_Speech/')
 import pandas as pd
 from torch.nn import CosineSimilarity
 import numpy as np
@@ -5,8 +7,8 @@ import numpy as np
 from feature_extraction.morphological import MorphologicalFeatureExtractor
 from infra.data_loader import DataLoader
 
-CLEAN_DATA_PATH = "data/clean_data.csv"
-GROUND_TRUTH_DOCX_PATH = "data/תיאור התמונות.docx"
+CLEAN_DATA_PATH = "Data/clean_data.csv"
+GROUND_TRUTH_DOCX_PATH = "Data/תיאור התמונות.docx"
 
 
 class GroundTruthDistance:
@@ -52,4 +54,4 @@ class GroundTruthDistance:
 if __name__ == '__main__':
     distance_calculator = GroundTruthDistance()
     distances = distance_calculator.calculate_ground_truth_distances()
-    distances.to_csv('data/ground_truth_distances.csv', index = False)
+    distances.to_csv('Data/ground_truth_distances.csv', index = False)
