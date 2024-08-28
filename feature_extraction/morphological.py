@@ -48,6 +48,13 @@ class MorphologicalFeatureExtractor:
                                                                                   min = 1e-9)
 
     @classmethod
+    def embed_func(cls, text_batch):
+        # Convert text to embeddings (e.g., using BERT)
+        embeddings = [MorphologicalFeatureExtractor.get_sentence_embedding(text) for text in text_batch]
+        # Convert to a tensor of shape (batch_size, embedding_dim)
+        return torch.stack(embeddings)
+
+    @classmethod
     def get_sentence_embedding(cls, sentence):
         encoded_input = tokenizer(sentence, padding = True, truncation = True, return_tensors = 'pt')
         # Compute token embeddings
@@ -155,7 +162,7 @@ if __name__ == '__main__':
     # Apply the function to add coherence scores
     feat_extractor = MorphologicalFeatureExtractor()
     df = pd.read_csv("../data/clean_data.csv", index_col = False)
-    df = explode_df_to_single_record(df)
+    df = explode_df_to_single_record(df).dropna()
     df = feat_extractor.preprocess_data(df)
-    df.to_csv("data_coherence.csv", index = False)
+    df.to_csv("../data/morphological_yap_features.csv", index = False)
     pass

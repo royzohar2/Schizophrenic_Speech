@@ -1,22 +1,12 @@
 import re
 
 import pandas as pd
-import torch
-
-from feature_extraction.morphological import MorphologicalFeatureExtractor
-
-
-def embed_func(text_batch):
-    # Convert text to embeddings (e.g., using BERT)
-    embeddings = [MorphologicalFeatureExtractor.get_sentence_embedding(text) for text in text_batch]
-    # Convert to a tensor of shape (batch_size, embedding_dim)
-    return torch.stack(embeddings)
 
 
 def clean_text(text):
     """Clean text by removing all occurrences of single and double square brackets and text inside them."""
     # Remove text within single or double square brackets
-    return re.sub(r'\[\[.*?\]\]|\[.*?\]', '', text).strip()
+    return re.sub(r'\[\[.*?\]\]|\[.*?\]', '', text).strip() if isinstance(text, str) else text
 
 
 def explode_df_to_single_record(df: pd.DataFrame):
