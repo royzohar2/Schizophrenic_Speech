@@ -1,9 +1,12 @@
+import json
+
 import pandas as pd
 import torch
 from torch import nn
 from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
+from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModel
 import numpy as np
 
@@ -117,7 +120,6 @@ class MorphologicalFeatureExtractor:
         df["sentence_id"] = sentence_ids
         return df
 
-
     def encode_labels(self, df: pd.DataFrame, categories: list[str] = CATEGORIES):
         for category in categories:
             df[category] = self.label_encoder.fit_transform(df[category].astype(str))
@@ -126,7 +128,7 @@ class MorphologicalFeatureExtractor:
     @staticmethod
     def aggregate_features(group):
         # Aggregate each feature using mean
-        return group[CATEGORIES + ["dependency_arc"]].values
+        return group[CATEGORIES + ["dependency_arc", "word"]].to_dict()
 
     def extract_all_features(self, text: str):
         yap_analysis = self.yap_feature.get_text_mrl_analysis(text)
@@ -148,6 +150,13 @@ class MorphologicalFeatureExtractor:
         all_features.update(yap_analysis_dict)
         return all_features
 
+    def extract_yap_features(self, text):
+        yap_analysis = self.yap_feature.get_text_mrl_analysis(text)
+        md_dep_tree_df = yap_analysis.parse_to_df()
+        aggregated_word_feat_df = md_dep_tree_df.apply(self.aggregate_features, axis = 1).reset_index()
+        aggregated_word_feat_df.rename(columns = {0: 'data'}, inplace = True)
+        return aggregated_word_feat_df.to_dict(orient = 'records')
+
     def preprocess_data(self, df: pd.DataFrame) -> pd.DataFrame:
         all_data = []
         for _, row in df.iterrows():
@@ -157,12 +166,41 @@ class MorphologicalFeatureExtractor:
             all_data.append(row_dict)
         return pd.DataFrame(all_data)
 
+    @staticmethod
+    def deserialize_yap_vec_to_dict(vec: list):
+        return {
+            "pos": vec[0],
+            "dependency_part": vec[1],
+            "gen": vec[2],
+            "tense": vec[3],
+            "per": vec[4],
+            "num_s_p": vec[5],
+            "dependency_arc": vec[6],
+        }
+
+    def build_word_feat_analysis_json(self, df: pd.DataFrame):
+        all_data = []
+        for _, row in tqdm(df.iterrows()):
+            record_data = {
+                "question": row["question"],
+                "label": row["label"],
+                "person": row["person"],
+                "yap": self.extract_yap_features(row["answer"]),
+            }
+            all_data.append(record_data)
+        return all_data
 
 if __name__ == '__main__':
     # Apply the function to add coherence scores
     feat_extractor = MorphologicalFeatureExtractor()
     df = pd.read_csv("../data/clean_data.csv", index_col = False)
     df = explode_df_to_single_record(df).dropna()
-    df = feat_extractor.preprocess_data(df)
-    df.to_csv("../data/morphological_yap_features.csv", index = False)
+    all_data_json = feat_extractor.build_word_feat_analysis_json(df)
+    file_path = '/Users/seanlavi/dev/Schizophrenic_Speech/data/word_features_analysis.json'
+    # Write the list of dictionaries to a JSON file
+    with open(file_path, 'w', encoding = 'utf-8') as f:
+        json.dump(all_data_json, f, ensure_ascii = False, indent = 4)
+    pass
+    # df = feat_extractor.preprocess_data(df)
+    # df.to_csv("../data/morphological_yap_features.csv", index = False)
     pass

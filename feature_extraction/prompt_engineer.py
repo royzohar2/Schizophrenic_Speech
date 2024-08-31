@@ -1,5 +1,5 @@
 import pandas as pd
-from transformers import AutoTokenizer, BertForMaskedLM ,AutoModel ,AutoModelForCausalLM
+from transformers import AutoTokenizer, BertForMaskedLM, AutoModel, AutoModelForCausalLM
 import torch
 from scipy.spatial.distance import cosine
 from tqdm import tqdm
@@ -112,7 +112,6 @@ class DisorderDetector:
                 return 1  # Closer to 'כן'
             else:
                 return 0  # Closer to 'לא'
-
 
     def process_dataframe(self):
         """
